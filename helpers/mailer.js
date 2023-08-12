@@ -1,25 +1,43 @@
 const nodemailer = require("nodemailer");
+const { otpTemplate } = require("../templates/otpTemplate");
+const utility = require("./utility");
+const userOTPModel = require("../models/userOTPModel");
 
-// create reusable transporter object using the default SMTP transport
-let transporter = nodemailer.createTransport({
-	host: process.env.EMAIL_SMTP_HOST,
-	port: process.env.EMAIL_SMTP_PORT,
-	//secure: process.env.EMAIL_SMTP_SECURE, // lack of ssl commented this. You can uncomment it.
-	auth: {
-		user: process.env.EMAIL_SMTP_USERNAME,
-		pass: process.env.EMAIL_SMTP_PASSWORD
-	}
-});
+exports.sendOTP = async (uid, req, res, next) => {
+	const config = {
+		service: 'gmail',
+		auth: {
+			user: process.env.EMAIL,
+			pass: process.env.PASSWORD,
+		},
+	};
+	const transporter = nodemailer.createTransport(config);
+	const OTP = utility.randomNumber(6); // generate OTP of 4 digits
 
-exports.send = function (from, to, subject, html)
-{
-	// send mail with defined transport object
-	// visit https://nodemailer.com/ for more options
-	return transporter.sendMail({
-		from: from, // sender address e.g. no-reply@xyz.com or "Fred Foo 👻" <foo@example.com>
-		to: to, // list of receivers e.g. bar@example.com, baz@example.com
-		subject: subject, // Subject line e.g. 'Hello ✔'
-		//text: text, // plain text body e.g. Hello world?
-		html: html // html body e.g. '<b>Hello world?</b>'
+	const otpData = new userOTPModel({
+		userid: uid,
+		otp: OTP,  
 	});
-};
+
+	await otpData.save();  // save the OTP in database for verification
+
+	const message = {
+		from: process.env.EMAIL,
+		to: req.body.email,
+		subject: 'Welcome to Sync Wallet App',
+		html: otpTemplate(OTP),
+	};
+
+	await transporter.sendMail(message).then(() => {
+		return res.status(200).json({
+			success: true,
+			message: "A verification email has been sent to " + req.body.email + ".",
+		});
+	}).catch((err) => {
+		return res.status(500).json({
+			success: false,
+			message: "Unable to send email.",
+			error: err.message
+		});
+	});
+}
